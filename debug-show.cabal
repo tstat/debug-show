@@ -1,0 +1,32 @@
+name:                debug-show
+version:             0.1.0.0
+synopsis:            Generate functions to inspect any data structure
+license:             BSD3
+license-file:        LICENSE
+author:              Travis Staton
+maintainer:          hello@travisstaton.com
+build-type:          Simple
+extra-source-files:  ChangeLog.md
+cabal-version:       >=1.10
+
+library
+  exposed-modules:                               Debug.Show
+  other-modules:                                 Debug.Show.TypeManipulation
+                                                 Debug.Show.StringExpressionManipulation
+  build-depends:                                   base >=4.10 && <4.11
+                                                 , template-haskell
+                                                 , transformers
+  hs-source-dirs:                                Lib
+  default-language:                              Haskell2010
+  ghc-options:                                   -Wall
+
+test-suite example
+  type:                                          exitcode-stdio-1.0
+  other-modules:                                 Structures
+  hs-source-dirs:                                Tests/Example
+  main-is:                                       Main.hs
+  ghc-options:                                   -Wall
+  default-extensions:                            OverloadedStrings
+  build-depends:                                   base
+                                                 , debug-show
+  default-language:                              Haskell2010

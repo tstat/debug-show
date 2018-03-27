@@ -1,0 +1,2 @@
+:set -XTemplateHaskell
+:set -ddump-splices
