@@ -1,4 +1,5 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Debug.Show.TypeManipulation where
 
@@ -8,6 +9,7 @@ import Control.Monad.Trans.Maybe
 import Data.Foldable (foldl')
 import Data.List (find)
 import Data.Maybe (fromMaybe)
+import Data.Set (Set)
 import Language.Haskell.TH
 
 data BoundTypeVar a
@@ -119,6 +121,10 @@ data TypeParam
   | Variable Name Exp -- A type variable along with a function that "shows" it
   deriving (Show, Eq, Ord)
 
+typeParamToType :: TypeParam -> Type
+typeParamToType (Constant fi)  = _fiType fi
+typeParamToType (Variable n _) = VarT n
+
 getTypeParameters :: BoundTypeVars -> Type -> Either String [TypeParam]
 getTypeParameters btvs = sequenceA . foldType f []
   where
@@ -142,3 +148,8 @@ foldType f b rootTyp =
     a@(UInfixT t1 _ t2) -> let left = foldType f (f b a) t1
                            in foldType f left t2
     a                   -> f b a
+
+newtype ParentTypes
+  = ParentTypes
+  { _parentTypes :: Set Type
+  } deriving (Show, Eq, Ord, Monoid)

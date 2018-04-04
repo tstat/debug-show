@@ -14,6 +14,7 @@ library
   other-modules:                                 Debug.Show.TypeManipulation
                                                  Debug.Show.StringExpressionManipulation
   build-depends:                                   base >=4.10 && <4.11
+                                                 , containers
                                                  , template-haskell
                                                  , transformers
   hs-source-dirs:                                Lib

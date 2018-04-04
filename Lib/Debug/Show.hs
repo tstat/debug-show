@@ -3,24 +3,32 @@
 
 module Debug.Show (debugShow) where
 
-import Control.Monad
-import Data.Foldable (foldlM)
-import Data.List (intersperse)
-import Debug.Show.StringExpressionManipulation
-import Debug.Show.TypeManipulation
-import Language.Haskell.TH
+import           Control.Monad
+import           Data.Foldable (foldlM, foldl')
+import           Data.List (intersperse)
+import           Data.Set (Set)
+import qualified Data.Set as S
+import           Debug.Show.StringExpressionManipulation
+import           Debug.Show.TypeManipulation
+import           Language.Haskell.TH
 
 debugShow :: Name -> Q Exp
-debugShow ty = do
+debugShow ty = debugShow' mempty ty
+
+debugShow' :: ParentTypes -> Name -> Q Exp
+debugShow' (ParentTypes pts) ty = do
   (ts,cs) <- reifyAndExtract ty
-  buildExp cs ts
+  let currentType = foldl' AppT (ConT ty) ts
+  if S.member currentType pts
+    then fail "debugShow: Recursive unshowable types detected"
+    else pure ()
+  buildExp (ParentTypes $ S.insert currentType pts) cs ts
 
 reifyAndExtract :: Name -> Q ([Type],[Con])
 reifyAndExtract x = do
     ty <- reify x
-    rs <- reifyRoles x
     case ty of
-      TyConI dec -> pure . (\(ts,cs) -> (filterPhantoms rs ts, cs)) $ extractCon dec
+      TyConI dec -> pure $ (\(x,y) -> (tyVarToType <$> x, y)) $ extractCon dec
       _          -> fail "debugShow must be used on a plain type constructor"
 
 extractCon :: Dec -> ([TyVarBndr],[Con])
@@ -34,16 +42,16 @@ extractCon dec =
 -- | Given a list of constructors and a list of type parameters, build
 -- a lambda expression that will return an informative string of value
 -- and type information about the structure.
-buildExp :: [Con] -> [Type] -> Q Exp
-buildExp cs tyVars = do
+buildExp :: ParentTypes -> [Con] -> [Type] -> Q Exp
+buildExp pts cs tyVars = do
   cVar <- newName "c"
   btvs <- traverse bindTypeVariable tyVars
   let patVars = (VarP . _btvFuncVar <$> btvs) ++ [VarP cVar]
   let btves = (\(BTV t fv) -> BTV t (VarE fv)) <$> btvs
-  LamE patVars . CaseE (VarE cVar) <$> traverse (conToMatch btves) cs
+  LamE patVars . CaseE (VarE cVar) <$> traverse (conToMatch pts btves) cs
 
-conToMatch :: BoundTypeVars -> Con -> Q Match
-conToMatch btvs con = do
+conToMatch :: ParentTypes -> BoundTypeVars -> Con -> Q Match
+conToMatch pts btvs con = do
   fis <- traverse (uncurry mkFieldInfo) partialFieldInfo
   let varPs = VarP . _fiBinding <$> fis
   e <- genAndFormatExp fis
@@ -86,28 +94,28 @@ conToMatch btvs con = do
       finalFormatter <=<
       traverse
         (\a -> determineFieldTreatment btvs a
-           >>= generateExp a
+           >>= generateExp pts a
            >>= fieldFormatter a)
 
 
 -- | Generate the rendering expression for a single field.
-generateExp :: FieldInfo -> FieldTreatment -> Q Exp
-generateExp (FieldInfo _ _ typ) NoInfo = pure $ typeStringExp typ
-generateExp (FieldInfo _ bin typ) HasShowInstance =
+generateExp :: ParentTypes -> FieldInfo -> FieldTreatment -> Q Exp
+generateExp _ (FieldInfo _ _ typ) NoInfo = pure $ typeStringExp typ
+generateExp _ (FieldInfo _ bin typ) HasShowInstance =
   [| show $(pure $ VarE bin)
      ++ " :: "
      ++ $(pure $ typeStringExp typ)
    |]
-generateExp (FieldInfo _ bin _) (TypeConstant typeCons typeParams) = do
-  funcExp <- debugShow $ _unTypeConstructor typeCons
-  flip AppE (VarE bin) <$> foldlM applyTypeParam funcExp typeParams
-generateExp (FieldInfo _ bin _) (TypeVariable tyVarFunc) =
+generateExp pts (FieldInfo _ bin _) (TypeConstant typeCons typeParams) = do
+  funcExp <- debugShow' pts $ _unTypeConstructor typeCons
+  flip AppE (VarE bin) <$> foldlM (applyTypeParam pts) funcExp typeParams
+generateExp _ (FieldInfo _ bin _) (TypeVariable tyVarFunc) =
   pure $ AppE tyVarFunc (VarE bin)
 
-applyTypeParam :: Exp -> TypeParam -> Q Exp
-applyTypeParam e1 (Constant fi) = do
+applyTypeParam :: ParentTypes -> Exp -> TypeParam -> Q Exp
+applyTypeParam pts e1 (Constant fi) = do
   typeInfo <- determineFieldTreatment' [ hasShowInstance ] [] fi
   case typeInfo of
     HasShowInstance -> AppE e1 <$> [| show |]
-    _               -> AppE e1 <$> debugShow (_fiBinding fi)
-applyTypeParam e1 (Variable _ e2) = pure $ AppE e1 e2
+    _               -> AppE e1 <$> debugShow' pts (_fiBinding fi)
+applyTypeParam _ e1 (Variable _ e2) = pure $ AppE e1 e2

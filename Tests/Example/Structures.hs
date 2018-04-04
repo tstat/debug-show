@@ -23,3 +23,12 @@ data R
 
 r :: R
 r = R 2 "hello world" ((show .) . const)
+
+data A = A1 B | A2 Int
+data B = B A
+
+a :: A
+a = A1 (B (A2 5))
+
+z :: Z (Y Int () Int) Int
+z = Z (Y (Z 2 3)) 5
